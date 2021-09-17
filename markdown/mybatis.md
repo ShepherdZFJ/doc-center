@@ -70,3 +70,58 @@ SqlSessionFactory 可以被认为是一个数据库连接池，它的作用是�
 如果说SqlSessionFactory 相当于数据库连接池，那么SqlSession 就相当于一个数据库连接（ Connection 对象） ，你可以在一个事务里面执行多条SQL ，然后通过它的commit、rollback 等方法， 提交或者回滚事务。所以它应该存活在一个业务请求中，处理完整个请求后，应该关闭这条连接，让它归还给SqlSessionFactory ， 否则数据库资源就很快被耗费精光，系统就会瘫痪，所以用try... catch .. . finally ...语句来保证其正确关闭。
 
 Mapper 是一个接口，它由SqlSession 所创建，所以它的最大生命周期至多和SqlSession保持一致，尽管它很好用，但是由于SqlSession 的关闭，它的数据库连接资源也会消失，所以它的生命周期应该小于等于Sq!Session 的生命周期。Mapper 代表的是一个请求中的业务处理，所以它应该在一个请求中，一旦处理完了相关的业务，就应该废弃它。
+
+#### 5.mybatis运行原理
+
+My Batis 的运行过程分为两大步：(1).读取配置文件缓存到Configuration 对象，用以创建SqlSessionFactory 。(2) SqISession 的执行过程
+
+##### 5.1构建SqlSessionFactory 过程
+
+第1 步： 通过org.apache.ibatis.builder.xml .XMLConfigBuilder 解析配置的XML 文件，读出所配置的参数，并将读取的内容存入org.apache.ibatis.session.Configuration 类对象中。而Configuration 采用的是单例模式，几乎所有的MyBatis 配置内容都会存放在这个单例对象中，以便后续将这些内容读出。
+第2 步：使用Confinguration 对象去创建SqlSessionFactory 。MyBatis 中的SqlSessionFactory是一个接口，而不是一个实现类，为此MyBatis 提供了一个默认的实现类org.apache.ibatis.session.defaults.DefaultSqlSessionFactory 
+
+##### 5.2sqlSession运行过程
+
+如下图所示：展示了sqlsession执行过程中涉及的核心类：
+
+<img src="https://markdown-file-zfj.oss-cn-hangzhou.aliyuncs.com/mybatis%E5%B1%82%E6%AC%A1%E7%BB%93%E6%9E%84%E5%9B%BE.jpg" style="zoom:67%;" />
+
+1）SqlSession 作为MyBatis工作的主要顶层API，表示和数据库交互的会话，完成必要数据库增删改查功能
+
+2）Executor MyBatis执行器，是MyBatis 调度的核心，负责SQL语句的生成和查询缓存的维护
+
+3）StatementHandler 封装了JDBC Statement操作，负责对JDBCstatement的操作，如设置参数、将Statement结果集转换成List集合。
+
+4）ParameterHandler 负责对用户传递的参数转换成JDBC Statement 所需要的参数
+
+5）ResultSetHandler 负责将JDBC返回的ResultSet结果集对象转换成List类型的集合；
+
+6）TypeHandler 负责java数据类型和jdbc数据类型之间的映射和转换
+
+7）MappedStatement MappedStatement维护了一条<select|update|delete|insert>节点的封装，其包含很多属性信息
+
+8）SqlSource 负责根据用户传递的parameterObject，动态地生成SQL语句，将信息封装到BoundSql对象中，并返回
+
+9）BoundSql 表示动态生成的SQL语句以及相应的参数信息
+
+10）Configuration MyBatis所有的配置信息都维持在Configuration对象之中
+
+整体执行流程图如下所示：
+
+![](https://markdown-file-zfj.oss-cn-hangzhou.aliyuncs.com/%E9%9D%9E%E5%B8%B8%E9%87%8D%E8%A6%81%E7%9A%84%E4%B8%80%E5%BC%A0%E5%9B%BE-%E5%88%86%E6%9E%90%E4%BB%A3%E7%90%86dao%E7%9A%84%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B.png)
+
+详细源码实现流程可以参考：https://mp.weixin.qq.com/s/jBUV9J0OEgAX8QEI31ZVdw
+
+https://mp.weixin.qq.com/s/r3rRB6JbGzUH0pMc4MjKyg
+
+ 这里不做细节阐述。
+
+#### 7.springboot整合mybatis原理
+
+##### 7.1初始化数据源
+
+打开`MybatisAutoConfiguration`自动配置类，可以看到该自动配置类被`@AutoConfigureAfter(DataSourceAutoConfiguration.class)`注解标注，表示当前自动配置类在`DataSourceAutoConfiguration`配置类之后解析。
+
+打开`DruidDataSourceAutoConfigure`自动配置类，可以看到该配置类被`@AutoConfigureBefore(DataSourceAutoConfiguration.class)`注解标注，表示当前自动配置类在`DataSourceAutoConfiguration`配置类之前解析。
+
+`DruidDataSourceAutoConfigure`自动配置类定义如下：
