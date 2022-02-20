@@ -10,25 +10,21 @@
 
 （2）：提高响应速度。当任务到达时，任务可以不需要等到线程创建就能立即执行。
 
-（3）：提高线程的可管理性。线程是稀缺资源，如果无限制地创建，不仅会消耗系统资源，还会降低系统的稳定                			 性，使用线程池可以进行统一分配、调优和监控。但是，要做到合理利用线程池，必须对其实现原理了如			指掌
+（3）：提高线程的可管理性。线程是稀缺资源，如果无限制地创建，不仅会消耗系统资源，还会降低系统的稳定性，使用线程池可以进行统一分配、调优和监控。但是，要做到合理利用线程池，必须对其实现原理了如指掌
 
 #### 3.线程池实现原理
 
- 	当向线程池提交一个任务之后，线程池是如何处理这个任务的呢？本节来看一下线程池的主要处理流程，处理流程图如图3-1所示。
+当向线程池提交一个任务之后，线程池是如何处理这个任务的呢？本节来看一下线程池的主要处理流程，处理流程图如图3-1所示：
 
-![1609826682439](C:\Users\86178\AppData\Roaming\Typora\typora-user-images\1609826682439.png)
-
-​                                                                    图3-1 线程池的主要处理流程
+![](https://markdown-file-zfj.oss-cn-hangzhou.aliyuncs.com/%E7%BA%BF%E7%A8%8B%E6%B1%A0-1)
 
 从图中可以看出，当提交一个新任务到线程池时，线程池的处理流程如下。
 1）线程池判断核心线程池里的线程是否都在执行任务。如果不是，则创建一个新的工作线程来执行任务。如果核心线程池里的线程都在执行任务，则进入下个流程。
 2）线程池判断工作队列是否已经满。如果工作队列没有满，则将新提交的任务存储在这个工作队列里。如果工作队列满了，则进入下个流程。
 3）线程池判断线程池的线程是否都处于工作状态。如果没有，则创建一个新的工作线程来执行任务。如果已经满了，则交给饱和策略来处理这个任务。
-ThreadPoolExecutor执行execute()方法的示意图，如图3-2所示。
+ThreadPoolExecutor执行execute()方法的示意图，如图3-2所示：
 
-<img src="C:\Users\86178\AppData\Roaming\Typora\typora-user-images\1609826943131.png" alt="1609826943131"  />
-
-​                                                           图3-2  ThreadPoolExecutor执行示意图
+<img src="https://markdown-file-zfj.oss-cn-hangzhou.aliyuncs.com/%E7%BA%BF%E7%A8%8B%E6%B1%A0-2" style="zoom:50%;" />
 
    ThreadPoolExecutor执行execute方法分下面4种情况。
 1）如果当前运行的线程少于corePoolSize，则创建新线程来执行任务（注意，执行这一步骤需要获取全局锁）。
@@ -36,8 +32,7 @@ ThreadPoolExecutor执行execute()方法的示意图，如图3-2所示。
 3）如果无法将任务加入BlockingQueue（队列已满），则创建新的线程来处理任务（注意，执行这一步骤需要获取全局锁）。
 4）如果创建新线程将使当前运行的线程超出maximumPoolSize，任务将被拒绝，并调用RejectedExecutionHandler.rejectedExecution()方法。
 ThreadPoolExecutor采取上述步骤的总体设计思路，是为了在执行execute()方法时，尽可能地避免获取全局锁（那将会是一个严重的可伸缩瓶颈）。在ThreadPoolExecutor完成预热之后（当前运行的线程数大于等于corePoolSize），几乎所有的execute()方法调用都是执行步骤2，而步骤2不需要获取全局锁。
-源码分析：上面的流程分析让我们很直观地了解了线程池的工作原理，让我们再通过源代
-码来看看是如何实现的，线程池执行任务的方法如下。
+源码分析：上面的流程分析让我们很直观地了解了线程池的工作原理，让我们再通过源代码来看看是如何实现的，线程池执行任务的方法如下。
 
 ```java
 public void execute(Runnable command) {
@@ -160,12 +155,30 @@ private boolean addWorker(Runnable firstTask, boolean core) {
 4.线程池的创建
 
 ```java
-new ThreadPoolExecutor(int corePoolSize,
-                       int maximumPoolSize,
-                       long keepAliveTime,
-                       TimeUnit unit,
-                       BlockingQueue<Runnable> workQueue,
-                       ThreadFactory threadFactory);
+    public ThreadPoolExecutor(int corePoolSize,
+                              int maximumPoolSize,
+                              long keepAliveTime,
+                              TimeUnit unit,
+                              BlockingQueue<Runnable> workQueue,
+                              ThreadFactory threadFactory,
+                              RejectedExecutionHandler handler) {
+        if (corePoolSize < 0 ||
+            maximumPoolSize <= 0 ||
+            maximumPoolSize < corePoolSize ||
+            keepAliveTime < 0)
+            throw new IllegalArgumentException();
+        if (workQueue == null || threadFactory == null || handler == null)
+            throw new NullPointerException();
+        this.acc = System.getSecurityManager() == null ?
+                null :
+                AccessController.getContext();
+        this.corePoolSize = corePoolSize;
+        this.maximumPoolSize = maximumPoolSize;
+        this.workQueue = workQueue;
+        this.keepAliveTime = unit.toNanos(keepAliveTime);
+        this.threadFactory = threadFactory;
+        this.handler = handler;
+    }
 ```
 
 创建一个线程池时需要输入几个参数，如下。
@@ -190,10 +203,20 @@ new ThreadPoolExecutor(int corePoolSize,
 - SynchronousQueue：一个不存储元素的阻塞队列。每个插入操作必须等到另一个线程调用移除操作，否则插入操作一直处于阻塞状态，吞吐量通常要高于Linked-BlockingQueue，静态工厂方法Executors.newCachedThreadPool使用了这个队列。
 - PriorityBlockingQueue：一个具有优先级的无限阻塞队列。
 
-6）**ThreadFactory (可选)**：用于设置创建线程的工厂，可以通过线程工厂给每个创建出来的线程设
-置更有意义的名字。使用开源框架guava提供的ThreadFactoryBuilder可以快速给线程池里的线
-程设置有意义的名字，代码如下。
+6）**ThreadFactory (可选)**：用于设置创建线程的工厂，可以通过线程工厂给每个创建出来的线程设置更有意义的名字。使用开源框架guava提供的ThreadFactoryBuilder可以快速给线程池里的线程设置有意义的名字，代码如下：
 new ThreadFactoryBuilder().setNameFormat("XX-task-%d").build();
+
+7) **RejectedExecutionHandler（饱和策略**）：当队列和线程池都满了，说明线程池处于饱和状态，那么必须采取一种策略处理提交的新任务。这个策略默认情况下是AbortPolicy，表示无法处理新任务时抛出异常。在JDK 1.5中Java线程池框架提供了以下4种策略。
+
+- AbortPolicy：直接抛出异常。
+
+- CallerRunsPolicy：只用调用者所在线程来运行任务。
+
+- DiscardOldestPolicy：丢弃队列里最近的一个任务，并执行当前任务。
+
+- DiscardPolicy：不处理，丢弃掉。
+
+当然，也可以根据应用场景需要来实现RejectedExecutionHandler接口自定义策略。如记录日志或持久化存储不能处理的任
 
 示例代码：
 
@@ -290,7 +313,7 @@ executor.shutdown();
 **建议使用有界队列**。有界队列能增加系统的稳定性和预警能力，可以根据需要设大一点儿，比如几千。有一次，我们系统里后台任务线程池的队列和线程池全满了，不断抛出抛弃任务的异常，通过排查发现是数据库出现了问题，导致执行SQL变得非常缓慢，因为后台任务线程池里的任务全是需要向数据库查询和插入数据的，所以导致线程池里的工作线程全部阻塞，任务积压在线程池里。如果当时我们设置成无界队列，那么线程池的队列就会越来越多，
 有可能会撑满内存，导致整个系统不可用，而不只是后台任务出现问题。当然，我们的系统所有的任务是用单独的服务器部署的，我们使用不同规模的线程池完成不同类型的任务，但是出现这样问题时也会影响到其他任务。
 
- 一般来说池中总线程数是核心池线程数量两倍，只要确保当核心池有线程停止时，核心池外能有线程进入核心池即可。 线程中的任务最终是交给CPU的线程去处理的，而CPU可同时处理线程数量大部分是CPU核数的两倍，运行环境中CPU的核数我们可以通过Runtime.getRuntime().availableProcessors()这个方法而获取。理论上来说核心池线程数量应该为Runtime.getRuntime().availableProcessors()*2，那么结果是否符合我们的预期呢，事实上大部分的任务都是I/O密集型的，即大部分任务消耗集中在的输入输出。而CPU密集型任务主要消耗CPU资源进行计算，当任务为CPU密集型时，核心池线程数设置为CPU核数+1即可）
+ 一般来说池中总线程数是核心池线程数量两倍，只要确保当核心池有线程停止时，核心池外能有线程进入核心池即可。 线程中的任务最终是交给CPU的线程去处理的，而CPU可同时处理线程数量大部分是CPU核数的两倍，运行环境中CPU的核数我们可以通过Runtime.getRuntime().availableProcessors()这个方法而获取。理论上来说核心池线程数量应该为Runtime.getRuntime().availableProcessors()*2，那么结果是否符合我们的预期呢，事实上大部分的任务都是I/O密集型的，即大部分任务消耗集中在的输入输出。而CPU密集型任务主要消耗CPU资源进行计算，**当任务为CPU密集型时，核心池线程数设置为CPU核数+1**即可）
 
 #### 8.线程池监控
 
