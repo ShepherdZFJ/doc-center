@@ -62,14 +62,14 @@ mybatis入门crud案例mybatis_example：https://github.com/ShepherdZFJ/mybatis_
 
 ##### 4.5 生命周期
 
-SqlSessionFactoryBuilder 的作用在于创建SqlSessionFactory ，创建成功后，SqlSessionFactoryBuilder 就失去了作用，所以它只能存在于创建Sq!SessionFactory 的方法中，而不要让其长期存在。
+SqlSessionFactoryBuilder 的作用在于创建SqlSessionFactory ，创建成功后，SqlSessionFactoryBuilder 就失去了作用，所以它只能存在于创建SqlSessionFactory 的方法中，而不要让其长期存在。
 
 SqlSessionFactory 可以被认为是一个数据库连接池，它的作用是创建SqlSession 接口对象。因为MyBatis 的本质就是Java 对数据库的操作，所以SqlSessionFactory 的生命周期存在于整个MyBatis 的应用之中，所以一旦创建了SqlSessionFactory ， 就要长期保存它，直至不再使用MyBatis 应用，所以可以认为SqlSessionFactory 的生命周期就等同于MyBatis 的应用周期。
-由于SqlSe ssionFactory 是一个对数据库的连接池，所以它占据着数据库的连接资源。如果创建多个SqlSessionFactory ，那么就存在多个数据库连接池，这样不利于对数据库资源的控制，也会导致数据库连接资源被消耗光，出现系统密机等情况，所以尽量避免发生这样的情况。因此在一般的应用中我们往往希望SqlSessionFactory 作为一个单例，让它在应用中被共享。
+由于SqlSe ssionFactory 是一个对数据库的连接池，所以它占据着数据库的连接资源。如果创建多个SqlSessionFactory ，那么就存在多个数据库连接池，这样不利于对数据库资源的控制，也会导致数据库连接资源被消耗光，出现系统宕机等情况，所以尽量避免发生这样的情况。因此在一般的应用中我们往往希望SqlSessionFactory 作为一个单例，让它在应用中被共享。
 
 如果说SqlSessionFactory 相当于数据库连接池，那么SqlSession 就相当于一个数据库连接（ Connection 对象） ，你可以在一个事务里面执行多条SQL ，然后通过它的commit、rollback 等方法， 提交或者回滚事务。所以它应该存活在一个业务请求中，处理完整个请求后，应该关闭这条连接，让它归还给SqlSessionFactory ， 否则数据库资源就很快被耗费精光，系统就会瘫痪，所以用try... catch .. . finally ...语句来保证其正确关闭。
 
-Mapper 是一个接口，它由SqlSession 所创建，所以它的最大生命周期至多和SqlSession保持一致，尽管它很好用，但是由于SqlSession 的关闭，它的数据库连接资源也会消失，所以它的生命周期应该小于等于Sq!Session 的生命周期。Mapper 代表的是一个请求中的业务处理，所以它应该在一个请求中，一旦处理完了相关的业务，就应该废弃它。
+Mapper 是一个接口，它由SqlSession 所创建，所以它的最大生命周期至多和SqlSession保持一致，尽管它很好用，但是由于SqlSession 的关闭，它的数据库连接资源也会消失，所以它的生命周期应该小于等于SqlSession 的生命周期。Mapper 代表的是一个请求中的业务处理，所以它应该在一个请求中，一旦处理完了相关的业务，就应该废弃它。
 
 #### 5.mybatis运行原理
 
@@ -125,3 +125,207 @@ https://mp.weixin.qq.com/s/r3rRB6JbGzUH0pMc4MjKyg
 打开`DruidDataSourceAutoConfigure`自动配置类，可以看到该配置类被`@AutoConfigureBefore(DataSourceAutoConfiguration.class)`注解标注，表示当前自动配置类在`DataSourceAutoConfiguration`配置类之前解析。
 
 `DruidDataSourceAutoConfigure`自动配置类定义如下：
+
+```
+@Bean(initMethod = "init")
+@ConditionalOnMissingBean
+public DataSource dataSource() {
+    LOGGER.info("Init DruidDataSource");
+    return new DruidDataSourceWrapper();
+}
+```
+
+创建`DruidDataSourceWrapper`对象，并在Bean创建之后调用`init()`方法，`DruidDataSourceWrapper`又实现了`InitializingBean`接口，`InitializingBean`接口实现的回调优于`init()`方法
+
+##### 7.2创建SqlSessionFactory
+
+使用`MybatisProperties`配置`SqlSessionFactoryBean`，通过`SqlSessionFactoryBean`创建`DefaultSqlSessionFactory`，`DefaultSqlSessionFactory`持有`Configuration`,`Configuration`持有`Environment`,`Environment`持有`SpringManagedTransactionFactory`和`DataSource`
+
+```
+@Bean
+@ConditionalOnMissingBean
+public SqlSessionFactory sqlSessionFactory(DataSource dataSource) throws Exception {
+    SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
+    // ......省略部分代码，可自行查看源代码
+    return factory.getObject();
+}
+```
+
+##### 7.3创建SqlSessionTemplate
+
+```
+SqlSessionTemplate`的创建比较简单，直接注入`DefaultSqlSessionFactory
+public SqlSessionTemplate(SqlSessionFactory sqlSessionFactory, ExecutorType executorType,
+      PersistenceExceptionTranslator exceptionTranslator) {
+
+    notNull(sqlSessionFactory, "Property 'sqlSessionFactory' is required");
+    notNull(executorType, "Property 'executorType' is required");
+
+    this.sqlSessionFactory = sqlSessionFactory;
+    this.executorType = executorType;
+    this.exceptionTranslator = exceptionTranslator;
+    this.sqlSessionProxy = (SqlSession) newProxyInstance(
+        SqlSessionFactory.class.getClassLoader(),
+        new Class[] { SqlSession.class },
+        new SqlSessionInterceptor());
+}
+```
+
+##### 7.4扫描含有@Mapper注解的接口
+
+```
+public static class AutoConfiguredMapperScannerRegistrar
+      implements BeanFactoryAware, ImportBeanDefinitionRegistrar, ResourceLoaderAware {
+    @Override
+    public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
+        // 定义扫描器
+        ClassPathMapperScanner scanner = new ClassPathMapperScanner(registry);
+
+        try {
+            if (this.resourceLoader != null) {
+                scanner.setResourceLoader(this.resourceLoader);
+            }
+   // 自动配置路径
+            List<String> packages = AutoConfigurationPackages.get(this.beanFactory);
+            if (logger.isDebugEnabled()) {
+                for (String pkg : packages) {
+                    logger.debug("Using auto-configuration base package '{}'", pkg);
+                }
+            }
+   // 指定扫描注解
+            scanner.setAnnotationClass(Mapper.class);
+            scanner.registerFilters();
+            scanner.doScan(StringUtils.toStringArray(packages));
+        } catch (IllegalStateException ex) {
+            logger.debug("Could not determine auto-configuration package, automatic mapper scanning disabled.", ex);
+        }
+    }
+}
+```
+
+该部分自定义了扫描器，扫描自动配置包路径下含有`@Mapper`注解的接口，注解为`BeanDefinition`并指定类型为`definition.setBeanClass(this.mapperFactoryBean.getClass());`，`MapperFactoryBean`实现了`FactoryBean`接口。因此我们可以得出一个结论：针对每个`Mapper`接口生成一个`MapperFactoryBean`这样一个`Bean`,在注入的时候会调用`FactoryBean`接口`getObject()`的实现。
+
+##### 7.5 MapperFactoryBean
+
+`MapperFactoryBean`不仅实现了`FactoryBean`接口还实现了`InitializingBean`接口，来看看`checkDaoConfig()`实现
+
+```
+@Override
+protected void checkDaoConfig() {
+    Configuration configuration = getSqlSession().getConfiguration();
+    if (this.addToConfig && !configuration.hasMapper(this.mapperInterface)) {
+        configuration.addMapper(this.mapperInterface);
+    }
+}
+```
+
+可以看到一个逻辑，就是有元素不添加，没有就添加。
+
+##### 7.6 注入Mapper
+
+经过上面的分析我们得知，每个`Mapper`都对应一个`MapperFactoryBean`，`MapperFactoryBean`又实现了`FactoryBean`接口，在注入的时候会调用`getObject()`实现
+
+```
+@Override
+public T getObject() throws Exception {
+    return getSqlSession().getMapper(this.mapperInterface);
+}
+public <T> T getMapper(Class<T> type, SqlSession sqlSession) {
+    final MapperProxyFactory<T> mapperProxyFactory = (MapperProxyFactory<T>) knownMappers.get(type);
+    return mapperProxyFactory.newInstance(sqlSession);
+}
+```
+
+##### 7.7 生成代理
+
+```
+protected T newInstance(MapperProxy<T> mapperProxy) {
+    return (T) Proxy.newProxyInstance(mapperInterface.getClassLoader(), new Class[] { mapperInterface }, mapperProxy);
+}
+
+public T newInstance(SqlSession sqlSession) {
+    final MapperProxy<T> mapperProxy = new MapperProxy<T>(sqlSession, mapperInterface, methodCache);
+    return newInstance(mapperProxy);
+}
+```
+
+也就是我们在`UserService`中注入的`UserMapper`实际上是一个代理对象，当调用`UserMapper`的目标方法的时候会调用`MapperProxy`的`invoke()`
+
+##### 7.8 调用目标方法
+
+当调用`UserMapper`目标方法的时候会调用`MapperProxy`的`invoke()`
+
+```
+@Override
+public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    try {
+        if (Object.class.equals(method.getDeclaringClass())) {
+            return method.invoke(this, args);
+        } else if (isDefaultMethod(method)) {
+            return invokeDefaultMethod(proxy, method, args);
+        }
+    } catch (Throwable t) {
+        throw ExceptionUtil.unwrapThrowable(t);
+    }
+    final MapperMethod mapperMethod = cachedMapperMethod(method);
+    return mapperMethod.execute(sqlSession, args);
+}
+```
+
+##### 7.9 获取连接
+
+在`7.1`章节介绍了初始化连接，那么在哪里获取的连接呢？
+
+打开`org.apache.ibatis.executor.SimpleExecutor#doQuery`，进入`prepareStatement()`
+
+```
+private Statement prepareStatement(StatementHandler handler, Log statementLog) throws SQLException {
+    Statement stmt;
+    Connection connection = getConnection(statementLog);
+    stmt = handler.prepare(connection, transaction.getTimeout());
+    handler.parameterize(stmt);
+    return stmt;
+}
+```
+
+可以很明显看到获取`Connection`的逻辑
+
+```
+protected Connection getConnection(Log statementLog) throws SQLException {
+    Connection connection = transaction.getConnection();
+    if (statementLog.isDebugEnabled()) {
+        return ConnectionLogger.newInstance(connection, statementLog, queryStack);
+    } else {
+        return connection;
+    }
+}
+```
+
+在`7.2`介绍了`Environment`持有`SpringManagedTransactionFactory`和`DataSource`，`SpringManagedTransactionFactory`创建出来的就是`SpringManagedTransaction`，在`SpringManagedTransaction`的`openConnection()`就可以看到从数据源连接池中获取连接的逻辑了
+
+```
+private void openConnection() throws SQLException {
+    this.connection = DataSourceUtils.getConnection(this.dataSource);
+    this.autoCommit = this.connection.getAutoCommit();
+    this.isConnectionTransactional = DataSourceUtils.isConnectionTransactional(this.connection, this.dataSource);
+
+    if (LOGGER.isDebugEnabled()) {
+        LOGGER.debug(
+            "JDBC Connection ["
+            + this.connection
+            + "] will"
+            + (this.isConnectionTransactional ? " " : " not ")
+            + "be managed by Spring");
+    }
+}
+```
+
+**总结**
+
+- 配置数据源，初始化数据库连接池
+- 创建SqlSessionFactory
+- 创建SqlSessionTemplate
+- 扫描含有@Mapper注解的接口注入到IOC容器中
+- 注入Mapper接口，调用getObject()获取接口对应MapperProxyFactory生成的代理
+- 调用Mapper接口目标方法的时候调用MapperProxy的invoke()
+- 从数据源数据库连接池中获取连接执行sql
