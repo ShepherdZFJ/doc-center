@@ -310,7 +310,7 @@ docker attach 55321bcae33d
 正在执行当前的代码...
 区别
 #docker exec #进入当前容器后开启一个新的终端，可以在里面操作。（常用）
-#docker attach # 进入容器正在执行的终端
+#docker attach # 进入容器正在执行的终端，如果从这个容器退出，会导致容器的停止
 
 ```
 

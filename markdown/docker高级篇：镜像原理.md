@@ -355,7 +355,7 @@ docker run -it -d --volumes-from c945db0a9bda 843f4373e7c7 /bin/bash
 
 3）#表示注释
 
-4）每一个指令都会创建提交一个新的镜像曾，并提交！
+4）每一个指令都会创建提交一个新的镜像层，并提交！
 
 ![](https://imgconvert.csdnimg.cn/aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2NoZW5nY29kZXgvY2xvdWRpbWcvbWFzdGVyL2ltZy9pbWFnZS0yMDIwMDUxNjEzMTc1Njk5Ny5wbmc?x-oss-process=image/format,png)
 
