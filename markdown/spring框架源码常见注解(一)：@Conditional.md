@@ -36,6 +36,14 @@ Condition是个接口，需要实现matches方法，**返回true则注入bean，
 
 示例代码请参考：https://blog.csdn.net/xcy1193068639/article/details/81491071
 
+> **项目推荐**：基于SpringBoot2.x、SpringCloud和SpringCloudAlibaba企业级系统架构底层框架封装，解决业务开发时常见的非功能性需求，防止重复造轮子，方便业务快速开发和企业技术栈框架统一管理。引入组件化的思想实现高内聚低耦合并且高度可配置化，做到可插拔。严格控制包依赖和统一版本管理，做到最少化依赖。注重代码规范和注释，非常适合个人学习和企业使用
+>
+> **Github地址**：https://github.com/plasticene/plasticene-boot-starter-parent
+>
+> **Gitee地址**：https://gitee.com/plasticene3/plasticene-boot-starter-parent
+
+
+
 #### 2.@ConditionalOnBean  
 
 @ConditionalOnBean ：当给定的在bean存在时,则实例化当前Bean，示例如下
@@ -142,3 +150,4 @@ fegin开启断路器hystrix：
 ```
 
 结论：@Conditional及其衍生注解，是为了方便程序根据当前环境或者容器情况来动态注入bean。
+
